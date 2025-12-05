@@ -368,7 +368,7 @@ resource "aws_codebuild_project" "app_deployer" {
   source {
     type      = "CODEPIPELINE"
     # buildspec file path must be relative to the source root
-    buildspec = "app/scripts/asg_deploy.sh" 
+    buildspec = "app/scripts/deploy_buildspec.yml" 
   }
   
   artifacts {
