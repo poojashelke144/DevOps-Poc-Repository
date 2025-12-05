@@ -1,5 +1,9 @@
 version: 0.2
 phases:
+  install:
+    commands:
+      # Add this line to set executable permission during the install phase
+      - chmod +x app/scripts/asg_deploy.sh
   build:
     commands:
       # This runs the actual shell script
