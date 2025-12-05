@@ -252,6 +252,11 @@ resource "aws_iam_role_policy_attachment" "codepipeline_s3_access_policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
 }
 
+resource "aws_iam_role_policy_attachment" "codepipeline_use_connection_policy" {
+  role       = aws_iam_role.codepipeline_flask_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AWSCodeStarConnectionsUseConnection"
+}
+
 # IAM Role for BOTH CodeBuild projects (Builder and Deployer)
 resource "aws_iam_role" "codebuild_docker_flask_role" {
   name = "codebuild-docker-flask-role"
