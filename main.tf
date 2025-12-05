@@ -218,11 +218,6 @@ resource "aws_s3_bucket" "codepipeline_artifacts" {
   bucket = "flask-app-docker-artifacts-${aws_vpc.main.id}" 
 }
 
-resource "aws_codestarconnections_connection" "github_connection" {
-  name          = "flask-app-github-connection"
-  provider_type = "GitHub"
-}
-
 # IAM Role for CodePipeline Service
 resource "aws_iam_role" "codepipeline_flask_role" {
   name = "codepipeline-flask-role"
@@ -250,11 +245,6 @@ resource "aws_iam_role_policy_attachment" "codepipeline_policy" {
 resource "aws_iam_role_policy_attachment" "codepipeline_s3_access_policy" {
   role       = aws_iam_role.codepipeline_flask_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
-}
-
-resource "aws_iam_role_policy_attachment" "codepipeline_use_connection_policy" {
-  role       = aws_iam_role.codepipeline_flask_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AWSCodeStarConnectionsUseConnection"
 }
 
 # IAM Role for BOTH CodeBuild projects (Builder and Deployer)
@@ -366,8 +356,8 @@ resource "aws_codepipeline" "flask_pipeline" {
     action {
       name             = "SourceFromGitHub"
       category         = "Source"
-      owner            = "AWS"
-      provider         = "GitHubV2"
+      owner            = "ThirdParty"
+      provider         = "GitHub"
       version          = "1"
       output_artifacts = ["SourceArtifact"]
       configuration = {
