@@ -317,11 +317,8 @@ resource "aws_codebuild_project" "app_build" {
   source { 
     type = "GITHUB"
     location = var.source_code_repo_url
-    auth { 
-        type = "OAUTH"
-        resource = var.github_token 
-    }
     git_clone_depth = 1
+    buildspec = "buildspec.yml"
   }
 
   artifacts { 
