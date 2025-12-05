@@ -292,7 +292,7 @@ resource "aws_iam_role_policy_attachment" "codedeploy_service_policy_attachment"
 
 resource "aws_codebuild_project" "app_build" {
   name           = "FlaskAppDockerBuild"
-  service_role   = data.aws_iam_role.codebuild_role.arn
+  service_role   = aws_iam_role.codebuild_docker_flask_role.arn 
   
   environment {
     compute_type    = "BUILD_GENERAL1_SMALL"
@@ -339,7 +339,7 @@ resource "aws_codedeploy_app" "flask_app" {
 resource "aws_codedeploy_deployment_group" "flask_dg" {
   app_name = aws_codedeploy_app.flask_app.name
   deployment_group_name = "FlaskDockerDG"
-  service_role_arn = aws_iam_role.codedeploy_service_role.arn
+  service_role_arn = aws_iam_role.codedeploy_flask_service_role.arn
   ec2_tag_set {
      ec2_tag_filter {
          key = "Name"
@@ -357,7 +357,7 @@ resource "aws_codedeploy_deployment_group" "flask_dg" {
 
 resource "aws_codepipeline" "flask_pipeline" {
    name = "flask-api-docker-pipeline"
-   role_arn = data.aws_iam_role.codepipeline_role.arn
+   role_arn = aws_iam_role.codepipeline_flask_role.arn
   artifact_store {
      location = aws_s3_bucket.codepipeline_artifacts.bucket
       type = "S3"
@@ -373,28 +373,28 @@ resource "aws_codepipeline" "flask_pipeline" {
            version = "1"
             output_artifacts = ["SourceArtifact"]
             configuration = { 
-                Owner = split("/", var.source_code_repo_url)
-                 Repo = split("/", var.source_code_repo_url) 
-                 Branch = var.github_branch
-                 OAuthToken = var.github_token
-                 } 
-                 } 
-                 }
+                Owner = element(split("/", replace(var.source_code_repo_url, ".git", "")), 3)
+                Repo = element(split("/", replace(var.source_code_repo_url, ".git", "")), 4)
+                Branch = var.github_branch
+                OAuthToken = var.github_token
+                } 
+            } 
+        }
   
   stage { 
     name = "BuildAndPush"
     action {
          name = "DockerBuild"
          category = "Build"
-        owner = "AWS"
+         owner = "AWS"
          provider = "CodeBuild"
          input_artifacts = ["SourceArtifact"]
-          output_artifacts = ["BuildArtifact"]
-          version = "1"
-          configuration = { ProjectName = aws_codebuild_project.app_build.name 
-          } 
-          } 
-          }
+         output_artifacts = ["BuildArtifact"]
+         version = "1"
+         configuration = { ProjectName = aws_codebuild_project.app_build.name 
+        } 
+    } 
+}
 
   stage {
     name = "Deploy"
