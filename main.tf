@@ -280,6 +280,11 @@ resource "aws_iam_role_policy_attachment" "ecr_access" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser"
 }
 
+resource "aws_iam_role_policy_attachment" "codebuild_s3_access" {
+  role       = aws_iam_role.codebuild_docker_flask_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+}
+
 resource "aws_iam_role_policy_attachment" "codebuild_cloudwatch_access" {
   role       = aws_iam_role.codebuild_docker_flask_role.name
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchFullAccess"
