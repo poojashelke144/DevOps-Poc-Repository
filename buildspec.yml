@@ -4,17 +4,15 @@ phases:
     commands:
       - echo Logging in to Amazon ECR...
       - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPO_URI
-      - IMAGE_TAG=$(echo $CODEBUILD_BUILD_ID | awk -F: '{print $2}')
+      - IMAGE_TAG=latest 
   build:
     commands:
       - echo Building the Docker image...
       - docker build -t $REPO_NAME:latest app/ 
-      - docker tag $REPO_NAME:latest $ECR_REPO_URI:$IMAGE_TAG
+      - docker tag $REPO_NAME:latest $ECR_REPO_URI:latest
   post_build:
     commands:
       - echo Pushing the Docker image to ECR...
-      - docker push $ECR_REPO_URI:$IMAGE_TAG
+      - docker push $ECR_REPO_URI:latest
 artifacts:
-  files:
-    - appspec.yml
-    - 'app/scripts/start_container.sh'
+  files: [] 
