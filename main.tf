@@ -312,7 +312,7 @@ resource "aws_codebuild_project" "app_build" {
     buildspec       = "buildspec.yml"
   }
   artifacts {
-    type = "NO_ARTIFACTS" # Changed to NO_ARTIFACTS
+    type = "CODEPIPELINE" # Changed to NO_ARTIFACTS
   }
 }
 
@@ -340,7 +340,7 @@ resource "aws_codebuild_project" "app_deployer" {
   }
   
   artifacts {
-    type = "NO_ARTIFACTS"
+    type = "CODEPIPELINE"
   }
 }
 
