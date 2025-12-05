@@ -139,10 +139,8 @@ resource "aws_ecr_repository" "flask_repo" {
 
 # --- 4. EC2 Instance Setup (ASG, Launch Template) ---
 
-# DATA SOURCE: Read the manually created IAM role for EC2 instances
-
 resource "aws_iam_role" "ec2_role" {
-  name = "ec2-docker-codedeploy-role"
+  name = "ec2-docker-codedeploy-role" # Renamed to generic EC2 role
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -158,10 +156,12 @@ resource "aws_iam_role" "ec2_role" {
   })
 }
 
-resource "aws_iam_role_policy_attachment" "codedeploy_ec2_policy_attachment" {
+# Policy needed for EC2 instances to pull from ECR and use the metadata service
+resource "aws_iam_role_policy_attachment" "ecr_readonly_policy_attachment" {
   role       = aws_iam_role.ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2CodeDeployforEC2Role"
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
+
 
 # IMPORTANT: You must attach this role to EC2 instances via an Instance Profile
 resource "aws_iam_instance_profile" "ec2_profile" {
@@ -185,8 +185,14 @@ resource "aws_launch_template" "flask_lt" {
   instance_type = "t3.micro" # Free tier instance type
   key_name      = aws_key_pair.generated_key.key_name # Assign the generated SSH key
   iam_instance_profile { arn = aws_iam_instance_profile.ec2_profile.arn }
-  user_data     = base64encode(file("app/scripts/install_docker.sh")) 
   vpc_security_group_ids = [aws_security_group.web_sg.id]
+  # Inject ECR URI into user data script
+  user_data     = base64encode(<<EOF
+#!/bin/bash
+export ECR_REPO_URI=${aws_ecr_repository.flask_repo.repository_url}
+/usr/local/bin/install_docker.sh
+EOF
+  )
 }
 
 resource "aws_autoscaling_group" "flask_asg" { 
@@ -206,14 +212,13 @@ resource "aws_autoscaling_group" "flask_asg" {
     }
 }
 
-# --- 5. CI/CD Pipeline Resources (S3, CodeDeploy, CodeBuild, CodePipeline) ---
+# --- 5. CI/CD Pipeline Resources (S3, CodeBuild, CodePipeline) ---
 
 resource "aws_s3_bucket" "codepipeline_artifacts" {
   bucket = "flask-app-docker-artifacts-${aws_vpc.main.id}" 
 }
 
-# DATA SOURCES: Read the manually created CI/CD IAM Roles
-
+# IAM Role for CodePipeline Service
 resource "aws_iam_role" "codepipeline_flask_role" {
   name = "codepipeline-flask-role"
 
@@ -233,7 +238,8 @@ resource "aws_iam_role" "codepipeline_flask_role" {
 
 resource "aws_iam_role_policy_attachment" "codepipeline_policy" {
   role       = aws_iam_role.codepipeline_flask_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AWSCodePipelineFullAccess"
+  # Corrected ARN
+  policy_arn = "arn:aws:iam::aws:policy/AWSCodePipeline_FullAccess"
 }
 
 resource "aws_iam_role_policy_attachment" "codepipeline_s3_access_policy" {
@@ -241,6 +247,7 @@ resource "aws_iam_role_policy_attachment" "codepipeline_s3_access_policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
 }
 
+# IAM Role for BOTH CodeBuild projects (Builder and Deployer)
 resource "aws_iam_role" "codebuild_docker_flask_role" {
   name = "codebuild-docker-flask-role"
 
@@ -268,31 +275,17 @@ resource "aws_iam_role_policy_attachment" "ecr_access" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser"
 }
 
-resource "aws_iam_role" "codedeploy_flask_service_role" {
-  name = "codedeploy-flask-service-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Principal = {
-          Service = "codedeploy.amazonaws.com"
-        }
-        Action = "sts:AssumeRole"
-      },
-    ]
-  })
+# Policy attachment needed for the DEPLOYER CodeBuild project to modify ASG
+resource "aws_iam_role_policy_attachment" "codebuild_asg_access" {
+  role       = aws_iam_role.codebuild_docker_flask_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AutoScalingFullAccess"
 }
 
-resource "aws_iam_role_policy_attachment" "codedeploy_service_policy_attachment" {
-  role       = aws_iam_role.codedeploy_flask_service_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole"
-}
 
+# BUILDER CodeBuild Project
 resource "aws_codebuild_project" "app_build" {
   name           = "FlaskAppDockerBuild"
-  service_role   = aws_iam_role.codebuild_docker_flask_role.arn 
+  service_role   = aws_iam_role.codebuild_docker_flask_role.arn # Corrected reference
   
   environment {
     compute_type    = "BUILD_GENERAL1_SMALL"
@@ -300,113 +293,111 @@ resource "aws_codebuild_project" "app_build" {
     type            = "LINUX_CONTAINER"
     privileged_mode = true 
 
-    # Use a dynamic block to iterate over the local environment variables map
     dynamic "environment_variable" {
-      # Loop through the variables defined in the locals block
       for_each = local.codebuild_env_vars
-
       content {
-        # The key (e.g., "ECR_REPO_URI") becomes the 'name'
         name  = environment_variable.key
-        # The value (e.g., the URL string) becomes the 'value'
         value = environment_variable.value
       }
     }
   }
-
-  source { 
-    type = "GITHUB"
-    location = var.source_code_repo_url
-    git_clone_depth = 1
-    buildspec = "buildspec.yml"
+  source {
+    type            = "CODEPIPELINE" # Changed to CODEPIPELINE
+    # Removed location/auth block
+    buildspec       = "buildspec.yml"
   }
-
-  artifacts { 
-    type = "CODEPIPELINE"
-    name = "BuildArtifact"
+  artifacts {
+    type = "NO_ARTIFACTS" # Changed to NO_ARTIFACTS
   }
 }
 
 
-resource "aws_codedeploy_app" "flask_app" { 
-    name = "FlaskDockerAPIApp"
-    compute_platform = "Server"
+# DEPLOYER CodeBuild Project (New Resource)
+resource "aws_codebuild_project" "app_deployer" {
+  name           = "FlaskAppASGDeployer"
+  service_role   = aws_iam_role.codebuild_docker_flask_role.arn
+  
+  environment {
+    compute_type    = "BUILD_GENERAL1_SMALL"
+    image           = "aws/codebuild/standard:7.0"
+    type            = "LINUX_CONTAINER"
+
+    environment_variable {
+      name  = "ASG_NAME"
+      value = aws_autoscaling_group.flask_asg.name # Pass the ASG name to the deploy script
+    }
+  }
+
+  source {
+    type      = "CODEPIPELINE"
+    # buildspec file path must be relative to the source root
+    buildspec = "app/scripts/asg_deploy.sh" 
+  }
+  
+  artifacts {
+    type = "NO_ARTIFACTS"
+  }
 }
 
-resource "aws_codedeploy_deployment_group" "flask_dg" {
-  app_name = aws_codedeploy_app.flask_app.name
-  deployment_group_name = "FlaskDockerDG"
-  service_role_arn = aws_iam_role.codedeploy_flask_service_role.arn
-  ec2_tag_set {
-     ec2_tag_filter {
-         key = "Name"
-          value = "flask-docker-instance"
-           type = "KEY_AND_VALUE"
-           } 
-           }
-  load_balancer_info { 
-    target_group_info { 
-        name = aws_lb_target_group.app_tg.name
-         } 
-         }
-  autoscaling_groups = [aws_autoscaling_group.flask_asg.name]
-}
+
+# --- 6. CodePipeline Orchestrator ---
 
 resource "aws_codepipeline" "flask_pipeline" {
-   name = "flask-api-docker-pipeline"
-   role_arn = aws_iam_role.codepipeline_flask_role.arn
-  artifact_store {
-     location = aws_s3_bucket.codepipeline_artifacts.bucket
-      type = "S3"
-       }
+  name     = "FlaskAppDockerPipeline"
+  role_arn = aws_iam_role.codepipeline_flask_role.arn # Corrected reference
 
-  stage { 
+  artifact_store {
+    location = aws_s3_bucket.codepipeline_artifacts.bucket
+    type     = "S3"
+  }
+
+  stage {
     name = "Source"
     action {
-         name = "Source"
-          category = "Source"
-          owner = "ThirdParty"
-          provider = "GitHub"
-           version = "1"
-            output_artifacts = ["SourceArtifact"]
-            configuration = { 
-                Owner = element(split("/", replace(var.source_code_repo_url, ".git", "")), 3)
-                Repo = element(split("/", replace(var.source_code_repo_url, ".git", "")), 4)
-                Branch = var.github_branch
-                OAuthToken = var.github_token
-                } 
-            } 
-        }
-  
-  stage { 
-    name = "BuildAndPush"
+      name             = "SourceFromGitHub"
+      category         = "Source"
+      owner            = "ThirdParty"
+      provider         = "GitHub"
+      version          = "1"
+      output_artifacts = ["SourceArtifact"]
+      configuration = {
+        # Corrected string extraction using element() and split()
+        Owner      = element(split("/", replace(var.source_code_repo_url, ".git", "")), 3)
+        Repo       = element(split("/", replace(var.source_code_repo_url, ".git", "")), 4)
+        Branch     = var.github_branch
+        OAuthToken = var.github_token
+        PollForSourceChanges = false 
+      }
+    }
+  }
+
+  stage {
+    name = "Build"
     action {
-         name = "DockerBuild"
-         category = "Build"
-         owner = "AWS"
-         provider = "CodeBuild"
-         input_artifacts = ["SourceArtifact"]
-         output_artifacts = ["BuildArtifact"]
-         version = "1"
-         configuration = { ProjectName = aws_codebuild_project.app_build.name 
-        } 
-    } 
-}
+      name             = "CodeBuildAndPush"
+      category         = "Build"
+      owner            = "AWS"
+      provider         = "CodeBuild"
+      input_artifacts  = ["SourceArtifact"]
+      output_artifacts = [] # No output artifacts from build stage
+      version          = "1"
+      configuration = {
+        ProjectName = aws_codebuild_project.app_build.name
+      }
+    }
+  }
 
   stage {
     name = "Deploy"
     action {
-       name = "DeployToEC2"
-       category = "Deploy"
-       owner = "AWS"
-       provider = "CodeDeploy"
-       input_artifacts = ["BuildArtifact"]
-       version = "1"
-       configuration = { 
-       ApplicationName = aws_codedeploy_app.flask_app.name
-       DeploymentGroupName = aws_codedeploy_deployment_group.flask_dg.deployment_group_name
-       ECR_REPO_URI = aws_ecr_repository.flask_repo.repository_url
-       IMAGE_TAG = "latest"
+      name             = "TriggerASGRollingUpdate"
+      category         = "Build"
+      owner            = "AWS"
+      provider         = "CodeBuild"
+      input_artifacts  = ["SourceArtifact"] # Pass Source artifacts to access asg_deploy.sh
+      version          = "1"
+      configuration = {
+        ProjectName = aws_codebuild_project.app_deployer.name
       }
     }
   }
