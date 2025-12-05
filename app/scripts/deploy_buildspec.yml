@@ -1,0 +1,6 @@
+version: 0.2
+phases:
+  build:
+    commands:
+      # This runs the actual shell script
+      - ./app/scripts/asg_deploy.sh
