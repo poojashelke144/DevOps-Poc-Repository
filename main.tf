@@ -247,6 +247,11 @@ resource "aws_iam_role_policy_attachment" "codepipeline_s3_access_policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
 }
 
+resource "aws_iam_role_policy_attachment" "codepipeline_codebuild_attachment" {
+  role       = aws_iam_role.codepipeline_flask_role.name
+  policy_arn = aws_iam_policy.codepipeline_codebuild_policy.arn
+}
+
 # IAM Role for BOTH CodeBuild projects (Builder and Deployer)
 resource "aws_iam_role" "codebuild_docker_flask_role" {
   name = "codebuild-docker-flask-role"
@@ -275,10 +280,37 @@ resource "aws_iam_role_policy_attachment" "ecr_access" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser"
 }
 
+resource "aws_iam_role_policy_attachment" "codebuild_cloudwatch_access" {
+  role       = aws_iam_role.codebuild_docker_flask_role.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchFullAccess"
+}
+
+
 # Policy attachment needed for the DEPLOYER CodeBuild project to modify ASG
 resource "aws_iam_role_policy_attachment" "codebuild_asg_access" {
   role       = aws_iam_role.codebuild_docker_flask_role.name
   policy_arn = "arn:aws:iam::aws:policy/AutoScalingFullAccess"
+}
+
+resource "aws_iam_policy" "codepipeline_codebuild_policy" {
+  name        = "codepipeline-codebuild-invoke-policy"
+  description = "Allows CodePipeline to start and monitor CodeBuild projects"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "codebuild:StartBuild",
+          "codebuild:BatchGetBuilds"
+        ]
+        Resource = [
+          aws_codebuild_project.app_build.arn,
+          aws_codebuild_project.app_deployer.arn
+        ]
+      },
+    ]
+  })
 }
 
 
