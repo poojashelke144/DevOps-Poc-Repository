@@ -26,24 +26,6 @@ provider "aws" {
   region = var.aws_region
 }
 
-# --- 1. SSH Key Setup (for debugging access) ---
-
-resource "tls_private_key" "ec2_ssh_key" {
-  algorithm = "RSA"
-  rsa_bits  = 4096
-}
-
-resource "local_file" "private_key_pem" {
-  content  = tls_private_key.ec2_ssh_key.private_key_pem
-  filename = "ec2_id_rsa"
-  file_permission = "0400"
-}
-
-resource "aws_key_pair" "generated_key" {
-  key_name   = "flask-app-debugger-key"
-  public_key = tls_private_key.ec2_ssh_key.public_key_openssh
-}
-
 # --- 2. Networking (VPC, Subnets, ALB) ---
 
 resource "aws_vpc" "main" { 
@@ -184,16 +166,14 @@ resource "aws_launch_template" "flask_lt" {
   name_prefix   = "flask-docker-lt"
   image_id      = data.aws_ami.ubuntu.id
   instance_type = "t3.micro" # Free tier instance type
-  key_name      = aws_key_pair.generated_key.key_name # Assign the generated SSH key
+  key_name      = "eks-keypair"
   iam_instance_profile { arn = aws_iam_instance_profile.ec2_profile.arn }
+    # Use templatefile() to inject the dynamic URL into the script content before base64 encoding
+  user_data     = base64encode(templatefile("${path.module}/app/scripts/install_docker.sh", {
+    # This maps the variable 'ecr_repo_url_var' in the script file to the Terraform attribute
+    ecr_repo_url_var = aws_ecr_repository.flask_repo.repository_url
+  }))
   vpc_security_group_ids = [aws_security_group.web_sg.id]
-  # Inject ECR URI into user data script
-  user_data     = base64encode(<<EOF
-#!/bin/bash
-export ECR_REPO_URI=${aws_ecr_repository.flask_repo.repository_url}
-/usr/local/bin/install_docker.sh
-EOF
-  )
 }
 
 resource "aws_autoscaling_group" "flask_asg" { 
