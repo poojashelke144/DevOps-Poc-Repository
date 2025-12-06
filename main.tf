@@ -170,18 +170,18 @@ resource "aws_launch_template" "flask_lt" {
   iam_instance_profile { arn = aws_iam_instance_profile.ec2_profile.arn }
     # Use HCL Heredoc to embed the script content directly.
   # We use standard Terraform interpolation for the ECR URL only.
-    user_data     = base64encode(<<EOF
+  user_data     = base64encode(<<EOF
 #!/bin/bash
 apt-get update -y
 apt-get install -y docker.io awscli ruby wget curl
 systemctl start docker
 systemctl enable docker
 
-# Fetch metadata for region and AZ using shell commands (Terraform ignores $$)
+# Fetch metadata for region and AZ using the correct URLs
 REGION=$$(curl -s 169.254.169.254 | grep region | cut -d\" -f4)
 AZ_NAME=$$(curl -s 169.254.169.254)
 
-# ECR_REPO_URI is injected by Terraform HCL interpolation using the single $ below:
+# ECR_REPO_URI is injected by Terraform HCL interpolation
 ECR_REPO_URI="${aws_ecr_repository.flask_repo.repository_url}" 
 
 # Login to ECR using the fetched region
@@ -193,7 +193,7 @@ docker rm flask_app_container || true
 docker pull $${ECR_REPO_URI}:latest
 docker run -d --name flask_app_container -p 5000:5000 -e AVAILABILITY_ZONE=$${AZ_NAME} $${ECR_REPO_URI}:latest
 
-# Add ubuntu user to docker group (requires new login session to take effect interactively)
+# Add ubuntu user to docker group
 usermod -aG docker ubuntu
 EOF
   )
