@@ -177,9 +177,12 @@ apt-get install -y docker.io awscli ruby wget curl
 systemctl start docker
 systemctl enable docker
 
-# Fetch metadata for region and AZ using the correct URLs AND PATHS
-REGION=$$(curl -s 169.254.169.254 | grep region | cut -d\" -f4)
-AZ_NAME=$$(curl -s 169.254.169.254)
+
+# Use a hardcoded region value from Terraform variable
+REGION="${var.aws_region}"
+
+# AZ_NAME is less critical for the app function, so we make it simpler
+AZ_NAME="N/A" 
 
 # ECR_REPO_URI is injected by Terraform HCL interpolation
 ECR_REPO_URI="${aws_ecr_repository.flask_repo.repository_url}" 
