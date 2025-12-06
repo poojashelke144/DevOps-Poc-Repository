@@ -177,7 +177,7 @@ apt-get install -y docker.io awscli ruby wget curl
 systemctl start docker
 systemctl enable docker
 
-# Fetch metadata for region and AZ using the correct URLs
+# Fetch metadata for region and AZ using the correct URLs AND PATHS
 REGION=$$(curl -s 169.254.169.254 | grep region | cut -d\" -f4)
 AZ_NAME=$$(curl -s 169.254.169.254)
 
@@ -199,6 +199,7 @@ EOF
   )
   vpc_security_group_ids = [aws_security_group.web_sg.id]
 }
+
 
 resource "aws_autoscaling_group" "flask_asg" { 
   min_size = 2
