@@ -135,6 +135,7 @@ resource "aws_lb_listener" "http" {
 # --- 3. ECR Repository ---
 resource "aws_ecr_repository" "flask_repo" {
   name = "flask-app-repo"
+  force_delete = true 
 }
 
 # --- 4. EC2 Instance Setup (ASG, Launch Template) ---
@@ -216,6 +217,7 @@ resource "aws_autoscaling_group" "flask_asg" {
 
 resource "aws_s3_bucket" "codepipeline_artifacts" {
   bucket = "flask-app-docker-artifacts-${aws_vpc.main.id}" 
+  force_destroy = true 
 }
 
 # IAM Role for CodePipeline Service
