@@ -168,11 +168,35 @@ resource "aws_launch_template" "flask_lt" {
   instance_type = "t3.micro" # Free tier instance type
   key_name      = "eks-keypair"
   iam_instance_profile { arn = aws_iam_instance_profile.ec2_profile.arn }
-    # Use templatefile() to inject the dynamic URL into the script content before base64 encoding
-  user_data     = base64encode(templatefile("${path.module}/app/scripts/install_docker.sh", {
-    # This maps the variable 'ecr_repo_url_var' in the script file to the Terraform attribute
-    ecr_repo_url_var = aws_ecr_repository.flask_repo.repository_url
-  }))
+    # Use HCL Heredoc to embed the script content directly.
+  # We use standard Terraform interpolation for the ECR URL only.
+    user_data     = base64encode(<<EOF
+#!/bin/bash
+apt-get update -y
+apt-get install -y docker.io awscli ruby wget curl
+systemctl start docker
+systemctl enable docker
+
+# Fetch metadata for region and AZ using shell commands (Terraform ignores $$)
+REGION=$$(curl -s 169.254.169.254 | grep region | cut -d\" -f4)
+AZ_NAME=$$(curl -s 169.254.169.254)
+
+# ECR_REPO_URI is injected by Terraform HCL interpolation using the single $ below:
+ECR_REPO_URI="${aws_ecr_repository.flask_repo.repository_url}" 
+
+# Login to ECR using the fetched region
+aws ecr get-login-password --region $${REGION} | docker login --username AWS --password-stdin $${ECR_REPO_URI}
+
+# Pull and run the *latest* image tag
+docker stop flask_app_container || true
+docker rm flask_app_container || true
+docker pull $${ECR_REPO_URI}:latest
+docker run -d --name flask_app_container -p 5000:5000 -e AVAILABILITY_ZONE=$${AZ_NAME} $${ECR_REPO_URI}:latest
+
+# Add ubuntu user to docker group (requires new login session to take effect interactively)
+usermod -aG docker ubuntu
+EOF
+  )
   vpc_security_group_ids = [aws_security_group.web_sg.id]
 }
 
