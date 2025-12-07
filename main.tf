@@ -179,8 +179,7 @@ systemctl enable docker
 
 REGION="${var.aws_region}"
 
-TOKEN=$(curl -X PUT "169.254.169.254" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
-AZ_NAME=$(curl -H "X-aws-ec2-metadata-token: $${TOKEN}" 169.254.169.254)
+AZ_NAME="N/A" 
 
 ECR_REPO_URI="${aws_ecr_repository.flask_repo.repository_url}" 
 
