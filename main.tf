@@ -177,17 +177,13 @@ apt-get install -y docker.io awscli ruby wget curl
 systemctl start docker
 systemctl enable docker
 
-
-# Use a hardcoded region value from Terraform variable
 REGION="${var.aws_region}"
 
-# AZ_NAME is less critical for the app function, so we make it simpler
-AZ_NAME="N/A" 
+TOKEN=$(curl -X PUT "169.254.169.254" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+AZ_NAME=$(curl -H "X-aws-ec2-metadata-token: $${TOKEN}" 169.254.169.254)
 
-# ECR_REPO_URI is injected by Terraform HCL interpolation
 ECR_REPO_URI="${aws_ecr_repository.flask_repo.repository_url}" 
 
-# Login to ECR using the fetched region
 aws ecr get-login-password --region $${REGION} | docker login --username AWS --password-stdin $${ECR_REPO_URI}
 
 # Pull and run the *latest* image tag
