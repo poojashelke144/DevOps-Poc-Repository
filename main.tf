@@ -182,21 +182,7 @@ systemctl enable docker
 REGION="${var.aws_region}"
 
 # AZ_NAME is less critical for the app function, so we make it simpler
-AZ_NAME="N/A"  
-
-# --- Improved logic to fetch AZ from metadata (using IMDSv2) ---
-# Set the metadata service to require IMDSv2 for security
-if ! curl -X PUT "169.254.169.254" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" > /dev/null 2>&1; then
-    echo "Failed to get IMDSv2 token. Proceeding with default AZ: $${AZ_NAME}"
-else
-    TOKEN=$(curl -X PUT "169.254.169.254" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
-    # Fetch just the AZ name, not the full region name appended
-    NEW_AZ_NAME=$(curl -H "X-aws-ec2-metadata-token: $${TOKEN}" 169.254.169.254)
-    if [ -n "$${NEW_AZ_NAME}" ]; then
-        AZ_NAME=$${NEW_AZ_NAME}
-        echo "Successfully retrieved AZ: $${AZ_NAME}"
-    fi
-fi
+AZ_NAME="N/A" 
 
 # ECR_REPO_URI is injected by Terraform HCL interpolation
 ECR_REPO_URI="${aws_ecr_repository.flask_repo.repository_url}" 
