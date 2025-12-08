@@ -1,14 +1,20 @@
 from flask import Flask, request, jsonify, abort
 from uuid import uuid4
 import os 
+import requests
 
 app = Flask(__name__)
 items = {} 
 
-@app.route('/', methods=['GET'])
-def index():
-   az_name = os.environ.get('AVAILABILITY_ZONE', 'unknown_az')
-   return jsonify({"message": "Flask API running", "availability_zone": az_name})
+#@app.route('/', methods=['GET'])
+#def index():
+#   az_name = os.environ.get('AVAILABILITY_ZONE', 'unknown_az')
+#  return jsonify({"message": "Flask API running", "availability_zone": az_name})
+
+@app.route("/zone", methods=['GET'])
+def zone():
+   az = requests.get("http://169.254.169.254/latest/meta-data/placement/availability-zone").text
+   return f"Flask app Running in AZ: {az}"   
 
 @app.route('/items', methods=['GET'])
 def list_items():
@@ -52,6 +58,6 @@ def delete_item(item_id):
        abort(404, description="Item not found")
    del items[item_id]
    return '', 204
-   
+
 if __name__ == '__main__':
    app.run(debug=True, host='0.0.0.0', port=5000)
