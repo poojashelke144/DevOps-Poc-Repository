@@ -172,31 +172,37 @@ resource "aws_launch_template" "flask_lt" {
   # We use standard Terraform interpolation for the ECR URL only.
   user_data     = base64encode(<<EOF
 #!/bin/bash
+# Stop and disable codedeploy-agent if it tries to run
+systemctl stop codedeploy-agent || true
+systemctl disable codedeploy-agent || true
 apt-get update -y
 apt-get install -y docker.io awscli ruby wget curl
 systemctl start docker
 systemctl enable docker
 
-
-# Use a hardcoded region value from Terraform variable
 REGION="${var.aws_region}"
+AZ_NAME="unknown-az" 
 
-# AZ_NAME is less critical for the app function, so we make it simpler
-AZ_NAME="N/A" 
+# Logic to fetch AZ using IMDSv2 and robust curl commands (using $$ for Terraform escape)
+TOKEN=$(curl -X PUT "169.254.169.254" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+if [ $? -eq 0 ]; then
+    NEW_AZ_NAME=$(curl -H "X-aws-ec2-metadata-token: $${TOKEN}" 169.254.169.254)
+    if [ -n "$${NEW_AZ_NAME}" ]; then
+        AZ_NAME=$${NEW_AZ_NAME}
+    fi
+fi
 
-# ECR_REPO_URI is injected by Terraform HCL interpolation
 ECR_REPO_URI="${aws_ecr_repository.flask_repo.repository_url}" 
 
-# Login to ECR using the fetched region
+# The following commands use ECR_REPO_URI correctly for the pull/run
+# Note: These commands are initially run at launch time
 aws ecr get-login-password --region $${REGION} | docker login --username AWS --password-stdin $${ECR_REPO_URI}
-
-# Pull and run the *latest* image tag
 docker stop flask_app_container || true
 docker rm flask_app_container || true
 docker pull $${ECR_REPO_URI}:latest
+# This line sets the environment variable for the container
 docker run -d --name flask_app_container -p 5000:5000 -e AVAILABILITY_ZONE=$${AZ_NAME} $${ECR_REPO_URI}:latest
 
-# Add ubuntu user to docker group
 usermod -aG docker ubuntu
 EOF
   )
